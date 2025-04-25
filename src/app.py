@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+import json
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -130,3 +131,43 @@ def unregister_from_activity(activity_name: str, email: str):
     # Remove student
     activity["participants"].remove(email)
     return {"message": f"Unregistered {email} from {activity_name}"}
+
+# Load teacher credentials from a JSON file
+teacher_credentials_file = current_dir / "teacher_credentials.json"
+if not teacher_credentials_file.exists():
+    teacher_credentials_file.write_text(json.dumps({"teacher1": "password123"}))
+
+with open(teacher_credentials_file, "r") as file:
+    teacher_credentials = json.load(file)
+
+@app.post("/login")
+def login(username: str, password: str):
+    """Authenticate a teacher."""
+    if username in teacher_credentials and teacher_credentials[username] == password:
+        return {"message": "Login successful"}
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
+@app.post("/activities/{activity_name}/teacher-signup")
+def teacher_signup_for_activity(activity_name: str, email: str, username: str, password: str):
+    """Allow teachers to sign up students for an activity."""
+    # Authenticate teacher
+    if username not in teacher_credentials or teacher_credentials[username] != password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Validate activity exists
+    if activity_name not in activities:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    # Get the specific activity
+    activity = activities[activity_name]
+
+    # Validate student is not already signed up
+    if email in activity["participants"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Student is already signed up"
+        )
+
+    # Add student
+    activity["participants"].append(email)
+    return {"message": f"Signed up {email} for {activity_name}"}
